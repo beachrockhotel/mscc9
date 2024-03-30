@@ -22,10 +22,6 @@ is_db_initialized = False
 
 keycloakid = KeycloakOpenID(server_url='http://keycloak:8080/', client_id='mscc', realm_name='cc', client_secret_key='gU5PljHnBxV2v5CgBXli5EpV6KnDCHhV')
 
-def token_get(password, user_name):
-    token = keycloakid.token(grant_type=['password'], username = user_name, password = password)
-    return token
-
 @app.route('/login')
 def login():
     user_name = request.args.get('login')
@@ -35,11 +31,8 @@ def login():
 
 def check_user_roles(token:str):
     try:
-        # Используем introspect для получения информации о токене
         token_info = keycloakid.introspect(token)
-        # Проверяем, содержит ли токен информацию о ролях в области доступа realm
         roles = token_info.get("realm_access", {}).get("roles", [])
-        # Возвращаем True, если роль "moder" присутствует среди ролей пользователя
         return "moder" in roles
     except Exception as e:
         print(e)
@@ -52,54 +45,24 @@ def create_tables():
         db.create_all()
         is_db_initialized = True
 
-@app.route('/enter')
-def enter():
-    url = 'http://127.0.0.1:5002/'
-    # Получение токена из заголовка Authorization
-    auth_header = request.headers.get('Authorization')
-    headers = {
-        'Authorization': auth_header
-    }
-    response = requests.get(url, headers=headers)
-    return response
-
 def require_auth(func):
-    """Декоратор для проверки аутентификации и роли пользователя."""
     @wraps(func)
     def decorated_function(*args, **kwargs):
-        # Получаем заголовок Authorization из входящего запроса
         auth_header = request.headers.get('Authorization')
         if auth_header and auth_header.startswith("Bearer "):
-            # Извлекаем токен
             token = auth_header.split(" ")[1]
-            # Проверяем наличие роли "moder" у пользователя
             if check_user_roles(token):
                 return func(*args, **kwargs)
             else:
-                # Если у пользователя нет нужной роли, возвращаем сообщение об ошибке
                 return jsonify({"error": "Access denied"}), 403
         else:
-            # Если заголовок Authorization отсутствует или некорректен, возвращаем ошибку
             return jsonify({"error": "Authorization header is missing or invalid"}), 401
     return decorated_function
 
 @app.route('/')
+@require_auth
 def home():
-    # Получаем заголовок Authorization из входящего запроса
-    auth_header = request.headers.get('Authorization')
-    if auth_header and auth_header.startswith("Bearer "):
-        # Извлекаем токен
-        token = auth_header.split(" ")[1]
-        # Проверяем наличие роли "moder" у пользователя
-        if check_user_roles(token):
-            # Если проверка пройдена, пользователь аутентифицирован и имеет нужную роль
-            return render_template('index.html')  # или любой другой ответ
-        else:
-            # Если у пользователя нет нужной роли, возвращаем сообщение об ошибке
-            return jsonify({"error": "Access denied"}), 403
-    else:
-        # Если заголовок Authorization отсутствует или некорректен, возвращаем ошибку
-        return jsonify({"error": "Authorization header is missing or invalid"}), 401
+    return render_template('index.html')
 
 @app.route('/menu', methods=['POST'])
 def add_menu_endpoint():
